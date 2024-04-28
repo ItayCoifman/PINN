@@ -4,7 +4,7 @@ from torch import nn
 
 class Scale(nn.Module):
     """
-    Scale the input data to the range [-1, 1].
+    Scales input data to the range [-1, 1].
     """
 
     def __init__(self, lb, ub):
@@ -20,9 +20,6 @@ class Scale(nn.Module):
     def forward(self, x):
         return 2.0 * (x - self.lb) / (self.ub - self.lb) - 1.0
 
-
-import torch
-import torch.nn as nn
 
 # todo This can be optimized by implementing PINN class that "talks" with the trainer and asks using a dict for the relevant gradients
 class HigherOrderGradients(nn.Module):
@@ -156,42 +153,3 @@ class PINN(nn.Module):
             x = layer(x)
         return self.output_layer(x)
 
-    def gradient(self, X, u):
-        """
-        Compute the spatial gradient of the solution 'u' with respect to the input 'X'.
-        """
-
-        # Compute the gradient of 'u' with respect to 'X'
-        du_dX = torch.autograd.grad(
-            inputs=X,
-            outputs=u,
-            grad_outputs=torch.ones_like(u),
-            retain_graph=True,
-            create_graph=True
-        )[0]
-
-        # Extract the spatial gradient (du/dx) from the computed gradients
-        du_dx = du_dX[:, 0]
-        # Extract the temporal gradient (du/dt) from the computed gradients
-        du_dt = du_dX[:, 1]
-
-        # Compute the second-order spatial derivative (d^2u/dx^2) by taking the gradient of du/dx
-        du_dxx = torch.autograd.grad(
-            inputs=X,
-            outputs=du_dx,
-            grad_outputs=torch.ones_like(du_dx),
-            retain_graph=True,
-            create_graph=True
-        )[0][:, 0]
-
-        # Compute the second-order temporal derivative (d^2u/dt^2) by taking the gradient of du/dt
-        du_dtt = torch.autograd.grad(
-            inputs=X,
-            outputs=du_dt,
-            grad_outputs=torch.ones_like(du_dt),
-            retain_graph=True,
-            create_graph=True
-        )[0][:, 1]
-
-        # Return the computed gradients and their second-order derivatives
-        return du_dX, du_dt, du_dx, du_dxx, du_dtt
