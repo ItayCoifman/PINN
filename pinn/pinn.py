@@ -24,7 +24,7 @@ class Scale(nn.Module):
 import torch
 import torch.nn as nn
 
-
+# todo This can be optimized by implementing PINN class that "talks" with the trainer and asks using a dict for the relevant gradients
 class HigherOrderGradients(nn.Module):
     def __init__(self, k):
         """
@@ -67,7 +67,7 @@ class HigherOrderGradients(nn.Module):
 
         gradients = []
         for j in range(du_dX.shape[-1]):
-            new_gradients = [du_dX[:, j]]
+            new_gradients = [du_dX[:, j: j + 1]]
             # Compute higher-order derivatives up to order k
             for _ in range(self.k - 1):
                 new_grad = torch.autograd.grad(
@@ -76,7 +76,7 @@ class HigherOrderGradients(nn.Module):
                     grad_outputs=torch.ones_like(new_gradients[-1]),
                     retain_graph=True,
                     create_graph=True
-                )[0][:, j]
+                )[0][:, j:j + 1]
                 new_gradients.append(new_grad)
             gradients.extend(new_gradients)
         return gradients

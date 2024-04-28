@@ -21,8 +21,8 @@ class Trainer:
 
         self.X_bc = X_bc.to(device)
         self.X_ic = X_ic.to(device)
-        self.y_bc = y_bc.unsqueeze(1).to(device)
-        self.y_ic = y_ic.unsqueeze(1).to(device)
+        self.y_bc = y_bc.to(device)
+        self.y_ic = y_ic.to(device)
 
         if dy_ic_dx is not None:
             self.X_ic.requires_grad = True
@@ -34,6 +34,10 @@ class Trainer:
         self.X = X.to(device)
         self.X.requires_grad = True
 
+        # check that all parameters have dim =2
+        # and the first dim is the batch size
+        self.test_dims()
+
         self.pde = pde
         # number of inputs to the pde
         self.grad_layer = HigherOrderGradients(
@@ -43,8 +47,16 @@ class Trainer:
         self.iter = 1
         self.history = {"loss": [], "loss_bc": [], "loss_ic": [], "loss_pde": []}
 
+    def test_dims(self):
+        assert self.X_bc.dim() == 2
+        assert self.X_ic.dim() == 2
+        assert self.y_bc.dim() == 2
+        assert self.y_ic.dim() == 2
+        assert self.X.dim() == 2
+        if self.dy_ic_dx is not None:
+            assert self.dy_ic_dx.dim() == 2
+
     def loss_func(self):
-        # this is more like a not so elegant hack to zero grad both optimizers
         self.adam.zero_grad()
 
         y_bc_pred = self.model(self.X_bc)
@@ -52,34 +64,21 @@ class Trainer:
 
         y_ic_pred = self.model(self.X_ic)
         loss_ic = self.criterion(y_ic_pred, self.y_ic)
-
+        # todo This needs to be generalized
         if self.dy_ic_dx is not None:
             du_dx, du_dxx, du_dt, du_dtt = self.grad_layer(self.X_ic, y_ic_pred)
-            #du_dX, du_dt, du_dx, du_dxx, du_dtt = self.model.gradient(self.X_ic, y_ic_pred)
             loss_ic = loss_ic + self.criterion(du_dt, self.dy_ic_dx)
+
+        # todo add gradient loss to the boundary condition
 
         # this loss is for the PDE initial condition and boundary condition
         loss_data = loss_bc + loss_ic
 
         u = self.model(self.X)
-        du_dx, du_dxx, du_dt, du_dtt = self.grad_layer(self.X, u)
-        #du_dX, du_dt, du_dx, du_dxx, du_dtt = self.model.gradient(self.X, u)
-
-        # todo remove this
-        """
-        du_dX = torch.stack([du_dx, du_dt], dim=-1)
-        du_dxx = torch.autograd.grad(
-            inputs=self.X,
-            outputs=du_dX,
-            grad_outputs=torch.ones_like(du_dX),
-            retain_graph=True,
-            create_graph=True
-        )[0][:, 0]
-        """
+        grads = self.grad_layer(self.X, u)
 
         # loss pde for the wave equation
-        left, right = self.pde(u=u.squeeze(), du_dx=du_dx, du_dt=du_dt, du_dxx=du_dxx, du_dtt=du_dtt)
-
+        left, right = self.pde(u, *grads)
 
         loss_pde = self.criterion(left, right)
 
@@ -98,24 +97,23 @@ class Trainer:
 
     def train(self, adam_epochs=1000, lbfgs_epochs=5000):
         self.model.train()
-        # optimizeres
         self.adam = torch.optim.Adam(self.model.parameters())
-
         for i in range(adam_epochs):
             self.adam.step(self.loss_func)
 
-        self.lbfgs = torch.optim.LBFGS(
-            self.model.parameters(),
-            lr=1.0,
-            max_iter=lbfgs_epochs,
-            max_eval=lbfgs_epochs,
-            # history_size=50,
-            tolerance_grad=1e-7,
-            tolerance_change=1.0 * np.finfo(float).eps,
-            line_search_fn="strong_wolfe",  # better numerical stability
-        )
+        if lbfgs_epochs >0:
+            self.lbfgs = torch.optim.LBFGS(
+                self.model.parameters(),
+                lr=1.0,
+                max_iter=lbfgs_epochs,
+                max_eval=lbfgs_epochs,
+                # history_size=50,
+                tolerance_grad=1e-7,
+                tolerance_change=1.0 * np.finfo(float).eps,
+                line_search_fn="strong_wolfe",  # better numerical stability
+            )
 
-        self.lbfgs.step(self.loss_func)
+            self.lbfgs.step(self.loss_func)
 
         return self.history
 
