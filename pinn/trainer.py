@@ -6,7 +6,7 @@ import numpy as np
 
 class Trainer:
     def __init__(self,
-                 model:PINN,
+                 model: PINN,
                  X,
                  X_bc,
                  X_ic,
@@ -18,26 +18,7 @@ class Trainer:
         device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
         self.model = model.to(device)
-
-        self.X_bc = X_bc.to(device)
-        self.X_ic = X_ic.to(device)
-        self.y_bc = y_bc.to(device)
-        self.y_ic = y_ic.to(device)
-
-        if dy_ic_dx is not None:
-            self.X_ic.requires_grad = True
-            self.dy_ic_dx = dy_ic_dx.to(device)
-            # self.X_ic.requires_grad = True
-        else:
-            self.dy_ic_dx = None
-
-        self.X = X.to(device)
-        self.X.requires_grad = True
-
-        # check that all parameters have dim =2
-        # and the first dim is the batch size
-        self.test_dims()
-
+        self.init_data(X, X_bc, X_ic, y_bc, y_ic, dy_ic_dx)
         self.pde = pde
         # number of inputs to the pde
         self.grad_layer = HigherOrderGradients(
@@ -55,6 +36,32 @@ class Trainer:
         assert self.X.dim() == 2
         if self.dy_ic_dx is not None:
             assert self.dy_ic_dx.dim() == 2
+
+    def init_data(self, X, X_bc, X_ic, y_bc, y_ic, dy_ic_dx=None):
+        # check that all parameters have dim =2
+        # and the first dim is the batch size
+        # move all the data to torch tensors if they are not
+        device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        if dy_ic_dx is None:
+            data = [X, X_bc, X_ic, y_bc, y_ic]
+            self.dy_ic_dx = None
+        else:
+            data = [X, X_bc, X_ic, y_bc, y_ic, dy_ic_dx]
+
+        for i, d in enumerate(data):
+            if not isinstance(d, torch.Tensor):
+                data[i] = torch.tensor(d)
+        for i, d in enumerate(data):
+            data[i] = d.to(device)
+        if dy_ic_dx is None:
+            self.X, self.X_bc, self.X_ic, self.y_bc, self.y_ic = data
+        else:
+            self.X, self.X_bc, self.X_ic, self.y_bc, self.y_ic, self.dy_ic_dx = data
+        self.X.requires_grad = True
+        if self.dy_ic_dx is not None:
+            self.dy_ic_dx.requires_grad = True
+
+        self.test_dims()
 
     def loss_func(self):
         self.adam.zero_grad()
@@ -101,7 +108,7 @@ class Trainer:
         for i in range(adam_epochs):
             self.adam.step(self.loss_func)
 
-        if lbfgs_epochs >0:
+        if lbfgs_epochs > 0:
             self.lbfgs = torch.optim.LBFGS(
                 self.model.parameters(),
                 lr=1.0,
