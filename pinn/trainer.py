@@ -57,9 +57,11 @@ class Trainer:
             self.X, self.X_bc, self.X_ic, self.y_bc, self.y_ic = data
         else:
             self.X, self.X_bc, self.X_ic, self.y_bc, self.y_ic, self.dy_ic_dx = data
+
         self.X.requires_grad = True
         if self.dy_ic_dx is not None:
-            self.dy_ic_dx.requires_grad = True
+            #self.dy_ic_dx.requires_grad = True
+            self.X_ic.requires_grad = True
 
         self.test_dims()
 
